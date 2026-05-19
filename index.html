@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Astrovana · คิวดูดวง</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600&family=Sarabun:wght@300;400;500&display=swap" rel="stylesheet" />
+    
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+        import { getDatabase, ref, onValue, set, get } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+        
+        // รหัสเชื่อมต่อฐานข้อมูลของร้าน Astrovana (Gemini ใส่ให้ครบแล้วจ้า)
+        const firebaseConfig = {
+            apiKey:            "AIzaSyAjYniDUPaIWXKhygfTg4jMKD9t7pchhak",
+            authDomain:        "astrovana-queue.firebaseapp.com",
+            databaseURL:       "https://astrovana-queue-default-rtdb.asia-southeast1.firebasedatabase.app",
+            projectId:         "astrovana-queue",
+            storageBucket:     "astrovana-queue.firebasestorage.app",
+            messagingSenderId: "519168793287",
+            appId:             "1:519168793287:web:bef0545f52e62661a6fce2"
+        };
+        
+        const PASSWORD = "0478"; // รหัสเข้าหน้าแอดมินของแม่หมอ
+        
+        const app = initializeApp(firebaseConfig);
+        const db  = getDatabase(app);
+        const queueRef = ref(db, "astrovana/queue");
+        const emptyState = { queue: [], currentNumber: 0, currentName: "", nextId: 1 };
+        
+        async function loadState() { const snap = await get(queueRef); return snap.exists() ? snap.val() : emptyState; }
+        async function saveState(state) { await set(queueRef, state); }
+        const $ = id => document.getElementById(id);
+        
+        function render(state) {
+            if (state.currentNumber > 0) {
+                $("cur-num").textContent  = "#" + state.currentNumber;
+                $("cur-name").textContent = state.currentName;
+                $("cur-num").style.display  = "block"; $("cur-name").style.display = "block"; $("cur-none").style.display = "none"; $("ripples").style.display  = "block";
+            } else {
+                $("cur-num").style.display  = "none"; $("cur-name").style.display = "none"; $("cur-none").style.display = "block"; $("ripples").style.display  = "none";
+            }
+            $("cur-count").textContent = state.queue.length > 0 ? "✦ รอคิวอีก " + state.queue.length + " คน" : "ไม่มีคิวรออยู่";
+            if ($("admin-cur")) { $("admin-cur").textContent = state.currentNumber > 0 ? "#" + state.currentNumber + " — " + state.currentName : "ยังไม่เริ่ม"; }
+            const list = $("queue-list");
+            if (list) {
+                list.innerHTML = "";
+                if (state.queue.length === 0) { list.innerHTML = '<div class="empty">ไม่มีคิวรออยู่ 🌙</div>'; }
+                else {
+                    state.queue.forEach((item, i) => {
+                        const el = document.createElement("div"); el.className = "qi" + (i === 0 ? " first" : "");
+                        el.innerHTML = `<div class="qn">#${item.number}</div><div class="qname">${item.name}</div>${i === 0 ? '<div class="npill">ถัดไป</div>' : ""}<button class="btn bghost" onclick="removeItem(${item.id})">ลบ</button>`;
+                        list.appendChild(el);
+                    });
+                }
+            }
+        }
+        
+        onValue(queueRef, snap => { const state = snap.exists() ? snap.val() : emptyState; render(state); });
+        window.addToQueue = async () => { const input = $("new-name"); const name  = input.value.trim(); if (!name) return; const state = await loadState(); state.queue.push({ id: state.nextId, name, number: state.nextId }); state.nextId++; await saveState(state); input.value = ""; const msg = $("add-msg"); msg.textContent = `✦ เพิ่ม "${name}" แล้ว`; msg.style.display = "block"; setTimeout(() => { msg.style.display = "none"; }, 2500); };
+        window.nextQueue = async () => { const state = await loadState(); if (!state.queue.length) return; state.currentNumber = state.queue[0].number; state.currentName   = state.queue[0].name; state.queue.shift(); await saveState(state); };
+        window.removeItem = async (id) => { const state = await loadState(); state.queue = state.queue.filter(q => q.id !== id); await saveState(state); };
+        window.resetAll = async () => { if (!confirm("รีเซ็ตคิวทั้งหมด?")) return; await saveState(emptyState); };
+        window.tryUnlock = () => { const val = $("pass-input").value; if (val === PASSWORD) { $("admin-lock").style.display = "none"; $("admin-panel").style.display = "block"; loadState().then(render); } else { $("pass-input").classList.add("err"); $("wrong-msg").style.display = "block"; setTimeout(() => { $("pass-input").classList.remove("err"); $("wrong-msg").style.display = "none"; }, 2000); } };
+        window.switchTab = (tab) => { $("tab-customer").classList.toggle("on", tab === "customer"); $("tab-admin").classList.toggle("on",    tab === "admin"); $("view-customer").style.display = tab === "customer" ? "block" : "none"; $("view-admin").style.display    = tab === "admin"    ? "block" : "none"; };
+        window.searchQueue = async () => { const name  = $("search-input").value.trim().toLowerCase(); const state = await loadState(); const found = state.queue.find(q => q.name.toLowerCase().includes(name)); const pos   = found ? state.queue.findIndex(q => q.id === found.id) + 1 : null; const box   = $("search-result"); if (!name) { box.style.display = "none"; return; } if (found) { $("r-name").textContent = "✦ " + found.name; $("r-pos").textContent  = "คิวลำดับที่ " + pos; const wait = pos - 1; $("r-wait").textContent = wait > 0 ? "รออีก " + wait + " คนก่อนถึงคุณ" : "🌟 คุณเป็นคนถัดไปเลย!"; $("r-wait").style.color = wait > 0 ? "#9090c0" : "#e8d080"; $("r-found").style.display    = "block"; $("r-notfound").style.display = "none"; } else { $("r-found").style.display    = "none"; $("r-notfound").style.display = "block"; } box.style.display = "block"; };
+        document.addEventListener("keydown", e => { if (e.key === "Enter") { if (document.activeElement.id === "new-name") window.addToQueue(); if (document.activeElement.id === "pass-input") window.tryUnlock(); if (document.activeElement.id === "search-input") window.searchQueue(); } });
+    </script>
+    
+    <style>
+        *{box-sizing:border-box;margin:0;padding:0;}
+        body{background:#0d1b2a;font-family:'Sarabun',sans-serif;color:#f0ebda;min-height:100vh;overflow-x:hidden;}
+        .stars{position:fixed;inset:0;pointer-events:none;z-index:0;overflow:hidden;}
+        .star{position:absolute;border-radius:50%;animation:twinkle var(--d) ease-in-out var(--dl) infinite;}
+        @keyframes twinkle{0%,100%{opacity:.1;transform:scale(1);}50%{opacity:.85;transform:scale(1.6);}}
+        .app{position:relative;z-index:1;padding-bottom:48px;}
+        .header{text-align:center;padding:44px 20px 14px;}
+        .orb{display:inline-flex;align-items:center;justify-content:center;width:76px;height:76px;border-radius:50%;background:radial-gradient(circle at 35% 35%,#4a5290,#2b3060);border:1.5px solid #e8d08050;box-shadow:0 0 0 8px #e8d08010,0 0 40px #c9a22740,inset 0 0 20px #c5b8e818;animation:floatUp 3.5s ease-in-out infinite;font-size:30px;margin-bottom:16px;color:#e8d080;}
+        @keyframes floatUp{0%,100%{transform:translateY(0);}50%{transform:translateY(-8px);}}
+        .brand{font-family:'Cormorant Garamond',serif;font-weight:600;font-size:clamp(26px,6vw,34px);color:#e8d080;letter-spacing:7px;animation:glowGold 3s ease-in-out infinite;}
+        @keyframes glowGold{0%,100%{text-shadow:0 0 8px #e8d08055,0 0 24px #c9a22730;}50%{text-shadow:0 0 18px #e8d080bb,0 0 50px #c9a22760,0 0 80px #c5b8e830;}}
+        .orn{display:flex;align-items:center;gap:8px;justify-content:center;margin:8px 0 6px;font-size:9px;color:#9a8cc840;letter-spacing:4px;}
+        .orn::before,.orn::after{content:'';flex:1;max-width:55px;height:1px;background:linear-gradient(90deg,transparent,#e8d08040);}
+        .brand-sub{font-size:11px;color:#8080b0;letter-spacing:3.5px;text-transform:uppercase;}
+        .tab-bar{display:flex;justify-content:center;gap:10px;padding:22px 20px;}
+        .tab-btn{padding:9px 28px;border-radius:100px;border:1px solid #e8d08028;background:transparent;color:#7080a0;font-family:'Sarabun',sans-serif;font-size:13px;cursor:pointer;transition:all .3s;}
+        .tab-btn.on{background:linear-gradient(135deg,#e8d08018,#c5b8e815);border-color:#e8d08088;color:#e8d080;box-shadow:0 0 20px #e8d08028;}
+        .card{background:linear-gradient(145deg,#1b263bda,#111a2eeb);border:1px solid #e8d08030;border-radius:20px;padding:26px;margin:0 auto 16px;max-width:460px;width:calc(100% - 32px);backdrop-filter:blur(14px);box-shadow:0 8px 32px #00000040;}
+        .ctitle{font-family:'Cormorant Garamond',serif;font-size:11px;color:#c084fc;letter-spacing:3px;text-transform:uppercase;margin-bottom:18px;}
+        .curbox{text-align:center;padding:18px 0 14px;position:relative;}
+        .curlabel{font-size:11px;color:#8080b0;letter-spacing:2.5px;text-transform:uppercase;margin-bottom:12px;}
+        #cur-num{font-family:'Cormorant Garamond',serif;font-weight:600;font-size:82px;line-height:1;color:#e8d080;animation:glowGold 2.8s ease-in-out infinite;display:none;}
+        #cur-name{font-family:'Sarabun',sans-serif;font-size:20px;color:#c5b8e8;margin-top:8px;display:none;}
+        #cur-none{font-family:'Sarabun',sans-serif;font-size:18px;color:#4a5280;font-style:italic;padding:10px 0;}
+        #cur-count{font-size:12px;color:#8080b0;margin-top:12px;}
+        #ripples{position:absolute;inset:0;pointer-events:none;display:none;}
+        .rpl{position:absolute;top:50%;left:50%;width:110px;height:110px;margin:-55px 0 0 -55px;border-radius:50%;border:1px solid #e8d08040;animation:ripple 2.2s ease-out infinite;}
+        .rpl:nth-child(2){animation-delay:.75s;} .rpl:nth-child(3){animation-delay:1.5s;}
+        @keyframes ripple{0%{transform:scale(0);opacity:.5;}100%{transform:scale(3);opacity:0;}}
+        .irow{display:flex;gap:10px;align-items:center;}
+        .ifield{flex:1;background:#0d1b2a99;border:1px solid #e8d08028;border-radius:11px;padding:12px 16px;color:#f0ebda;font-family:'Sarabun',sans-serif;font-size:14px;outline:none;}
+        .ifield:focus{border-color:#c5b8e888;}
+        .rbox{margin-top:16px;padding:20px;background:linear-gradient(135deg,#1b263b88,#111a2e88);border:1px solid #c5b8e860;border-radius:14px;text-align:center;}
+        #r-name{font-size:21px;color:#e8d080;}
+        #r-pos{font-size:13px;color:#c5b8e8;margin-top:6px;}
+        #r-wait{font-size:12px;margin-top:4px;}
+        .btn{padding:11px 20px;border-radius:11px;border:none;font-family:'Sarabun',sans-serif;font-size:14px;cursor:pointer;font-weight:600;}
+        .bgold{background:linear-gradient(135deg,#c9a227,#e8d07a);color:#0d1b2a;}
+        .blav{background:linear-gradient(135deg,#5a4a9a,#8a7ac0);color:#e8e0f8;}
+        .bghost{background:transparent;border:1px solid #404870;color:#607090;font-size:12px;padding:7px 13px;}
+        .qlist{display:flex;flex-direction:column;gap:8px;max-height:300px;overflow-y:auto;}
+        .qi{display:flex;align-items:center;gap:12px;padding:11px 14px;background:#0d1b2a55;border:1px solid #e8d08018;border-radius:10px;}
+        .qi.first {border-color:#e8d08055; background:#e8d08012;}
+        .qn{font-family:'Cormorant Garamond',serif;font-size:12px;color:#9090c0;min-width:34px;text-align:center;background:#2b306088;border:1px solid #e8d08020;padding:4px 7px;border-radius:6px;}
+        .qi.first .qn{color:#e8d080;border-color:#e8d08055;}
+        .qname{flex:1;font-size:14px;}
+        .npill{font-size:9px;color:#c9a227;border:1px solid #e8d08050;border-radius:100px;padding:2px 9px;background:#e8d08010;}
+        .empty{text-align:center;color:#3a4270;font-size:13px;padding:18px 0;font-style:italic;}
+        .slabel{font-size:14px;color:#e8d080;margin-bottom:12px;}
+        .amsg{font-size:12px;color:#80c890;margin-top:10px;text-align:center;display:none;}
+        .brow{display:flex;justify-content:center;margin-top:16px;}
+        .rrow{display:flex;justify-content:flex-end;margin-top:12px;}
+        .wmsg{font-size:12px;color:#904050;margin-top:8px;display:none;}
+    </style>
+</head>
+<body>
+    <div class="stars" id="stars"></div>
+    <div class="app">
+        <div class="header">
+            <div class="orb">✦</div>
+            <div class="brand">ASTROVANA</div>
+            <div class="orn">✦ ✦ ✦</div>
+            <div class="brand-sub">Queue · คิวดูดวงออนไลน์</div>
+        </div>
+
+        <div class="tab-bar">
+            <button id="tab-customer" class="tab-btn on" onclick="switchTab('customer')">✦ ดูคิว</button>
+            <button id="tab-admin" class="tab-btn" onclick="switchTab('admin')">⟡ จัดการ</button>
+        </div>
+
+        <div id="view-customer">
+            <div class="card">
+                <div class="ctitle">⟡ กำลังดูดวงอยู่</div>
+                <div class="curbox">
+                    <div id="ripples"><div class="rpl"></div><div class="rpl"></div><div class="rpl"></div></div>
+                    <div class="curlabel">คิวปัจจุบัน</div>
+                    <div id="cur-num"></div>
+                    <div id="cur-name"></div>
+                    <div id="cur-none">ยังไม่เริ่ม</div>
+                    <div id="cur-count">ไม่มีคิวรออยู่</div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="ctitle">⟡ เช็คคิวของคุณ</div>
+                <div class="irow">
+                    <input id="search-input" class="ifield" placeholder="พิมพ์ชื่อของคุณ..." oninput="searchQueue()" />
+                </div>
+                <div id="search-result" style="display:none;">
+                    <div id="r-found" class="rbox">
+                        <div id="r-name"></div>
+                        <div id="r-pos"></div>
+                        <div id="r-wait"></div>
+                    </div>
+                    <div id="r-notfound" style="display:none;margin-top:14px;font-size:13px;color:#605080;text-align:center;font-style:italic;">ไม่พบชื่อนี้ในคิว 🌙</div>
+                </div>
+            </div>
+        </div>
+
+        <div id="view-admin" style="display:none;">
+            <div id="admin-lock" class="card" style="text-align:center;">
+                <div style="font-size:28px;margin-bottom:12px;">⟡</div>
+                <div class="ctitle" style="text-align:center;">ใส่รหัสผ่าน</div>
+                <div class="irow" style="justify-content:center;">
+                    <input id="pass-input" class="ifield" type="password" placeholder="รหัสผ่าน..." style="max-width:180px;" />
+                    <button class="btn blav" onclick="tryUnlock()">เข้า</button>
+                </div>
+                <div id="wrong-msg" class="wmsg">รหัสผ่านไม่ถูกต้อง</div>
+            </div>
+
+            <div id="admin-panel" style="display:none;">
+                <div class="card">
+                    <div class="ctitle">⟡ เพิ่มลูกค้าเข้าคิว</div>
+                    <div class="irow">
+                        <input id="new-name" class="ifield" placeholder="ชื่อลูกค้า..." />
+                        <button class="btn bgold" onclick="addToQueue()">+ เพิ่ม</button>
+                    </div>
+                    <div id="add-msg" class="amsg"></div>
+                </div>
+
+                <div class="card">
+                    <div class="ctitle">⟡ จัดการคิว</div>
+                    <div class="slabel">คิวปัจจุบัน: <span id="admin-cur">ยังไม่เริ่ม</span></div>
+                    <div id="queue-list" class="qlist"><div class="empty">ไม่มีคิวรออยู่ 🌙</div></div>
+                    <div class="brow"><button class="btn bgold" onclick="nextQueue()">✦ เรียกคิวถัดไป</button></div>
+                    <div class="rrow"><button class="btn bghost" onclick="resetAll()">รีเซ็ตทั้งหมด</button></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const sf = document.getElementById("stars");
+        for (let i = 0; i < 60; i++) {
+            const s = document.createElement("div"); s.className = "star";
+            s.style.cssText = `top:${Math.random()*100}%;left:${Math.random()*100}%;width:${Math.random()*2+0.6}px;height:${Math.random()*2+0.6}px;background:${i%6===0?"#c5b8e8":"#f5e9a8"};--d:${2+Math.random()*4}s;--dl:${Math.random()*5}s;`;
+            sf.appendChild(s);
+        }
+    </script>
+</body>
+</html>
